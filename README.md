@@ -1,0 +1,43 @@
+# Stock Research Platform
+
+Production-style scaffold for public-data stock forecasting, signal generation, backtesting, and experiment tracking.
+
+The first milestone focuses on correctness-sensitive foundations:
+
+- isolated public data adapters for Yahoo Finance, FRED, and SEC EDGAR
+- a point-in-time daily panel builder
+- configuration-driven universe, source, horizon, and feature-regime design
+- tests for alignment rules that commonly cause leakage
+
+## Local Setup
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env
+```
+
+Set `SEC_USER_AGENT` before using SEC endpoints. Set `FRED_API_KEY` before using FRED API ingestion.
+
+## Run Tests
+
+```bash
+pytest
+```
+
+## Current Branch
+
+Initial scaffold work is intended to happen on:
+
+```bash
+feature/data-layer-pit-scaffold
+```
+
+Do not commit directly to `main`. Keep future milestones on focused feature branches and open PRs into `main`.
+
+## Architecture Docs
+
+- [Architecture Plan](docs/architecture.md)
+- [Repository Tree](docs/repository_tree.md)
+- [Milestones](docs/milestones.md)
