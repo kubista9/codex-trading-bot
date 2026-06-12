@@ -38,6 +38,12 @@ python scripts/run_baseline_experiment.py \
 
 Outputs are written to `artifacts/baseline_experiment/`.
 
+Important exported tables:
+
+- `feature_target_panel.csv`: full audit panel, including natural edge missingness from rolling lookbacks and future targets.
+- `model_dataset.csv`: strict training-ready dataset with complete selected features and targets only.
+- `feature_importance.csv`: model coefficients or tree feature importances by task, horizon, and model.
+
 ## Current Branch
 
 Initial scaffold work is intended to happen on:

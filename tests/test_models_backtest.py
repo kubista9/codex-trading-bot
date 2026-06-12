@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.backtest.simple import run_signal_backtest
+from src.models.dataset import make_complete_modeling_frame
 from src.models.splits import make_temporal_holdout
 from src.signals.rules import signals_from_expected_returns
 
@@ -51,3 +52,30 @@ def test_backtest_reports_trading_metrics() -> None:
 
     assert metrics.loc[0, "cumulative_return"] > 0
     assert metrics.loc[0, "turnover"] > 0
+
+
+def test_complete_modeling_frame_drops_incomplete_edges() -> None:
+    frame = pd.DataFrame(
+        {
+            "as_of_date": pd.bdate_range("2024-01-01", periods=4),
+            "ticker": ["AAA"] * 4,
+            "adj_close": [100.0, 101.0, 102.0, 103.0],
+            "volume": [1000, 1100, 1200, 1300],
+            "return_1d": [None, 0.01, 0.01, 0.01],
+            "forward_return_1d": [0.01, 0.01, 0.01, None],
+            "direction_1d": [1, 1, 1, None],
+            "signal_target_1d": ["hold", "hold", "hold", None],
+        }
+    )
+
+    complete = make_complete_modeling_frame(
+        frame,
+        feature_columns=["return_1d"],
+        horizons=(1,),
+    )
+
+    assert complete["as_of_date"].tolist() == [
+        pd.Timestamp("2024-01-02"),
+        pd.Timestamp("2024-01-03"),
+    ]
+    assert not complete.isna().any().any()

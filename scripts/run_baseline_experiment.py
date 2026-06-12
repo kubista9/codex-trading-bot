@@ -18,6 +18,7 @@ from src.data.pit import PITBuildConfig, PointInTimeDatasetBuilder
 from src.data.storage import LocalDataStore
 from src.data.yahoo import YahooFinanceAdapter
 from src.features.technical import TechnicalFeatureConfig, build_technical_features
+from src.models.dataset import make_complete_modeling_frame
 from src.models.training import train_classification_models, train_regression_models
 from src.signals.rules import signals_from_expected_returns
 from src.targets.returns import TargetConfig, build_return_targets
@@ -120,7 +121,7 @@ def main() -> None:
             sell_threshold=-0.02,
         ),
     )
-    write_csv(target_frame, artifact_dir, "model_dataset.csv")
+    write_csv(target_frame, artifact_dir, "feature_target_panel.csv")
     write_csv(feature_result.metadata, artifact_dir, "feature_metadata.csv")
 
     metrics: list[dict[str, Any]] = []
@@ -130,9 +131,17 @@ def main() -> None:
     backtests: list[pd.DataFrame] = []
 
     feature_columns = feature_result.feature_columns
+    model_frame = make_complete_modeling_frame(
+        target_frame,
+        feature_columns=feature_columns,
+        horizons=horizons,
+        context_columns=["as_of_date", "ticker", "adj_close", "volume"],
+    )
+    write_csv(model_frame, artifact_dir, "model_dataset.csv")
+
     for horizon in horizons:
         regression_results = train_regression_models(
-            target_frame,
+            model_frame,
             feature_columns=feature_columns,
             target_col=f"forward_return_{horizon}d",
             horizon=horizon,
@@ -140,7 +149,7 @@ def main() -> None:
             min_train_days=args.min_train_days,
         )
         classification_results = train_classification_models(
-            target_frame,
+            model_frame,
             feature_columns=feature_columns,
             target_col=f"direction_{horizon}d",
             horizon=horizon,
