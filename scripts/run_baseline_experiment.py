@@ -16,6 +16,8 @@ if str(REPO_ROOT) not in sys.path:
 from src.backtest.simple import run_signal_backtest
 from src.data.missingness import drop_missingness_flag_columns, summarize_missingness_flags
 from src.data.pit import PITBuildConfig, PointInTimeDatasetBuilder
+from src.data.fred import FredAdapter
+from src.data.sec import SECEdgarAdapter, company_facts_to_wide
 from src.data.storage import LocalDataStore
 from src.data.yahoo import YahooFinanceAdapter
 from src.features.technical import TechnicalFeatureConfig, build_technical_features
@@ -29,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a price-only baseline stock experiment.")
     parser.add_argument("--universe", default="configs/universe.sample.yml")
     parser.add_argument("--horizons", default="configs/horizons.yml")
+    parser.add_argument("--data-sources", default="configs/data_sources.yml")
     parser.add_argument("--start-date", default="2010-01-01")
     parser.add_argument("--end-date", default=date.today().isoformat())
     parser.add_argument("--artifact-dir", default="artifacts/baseline_experiment")
@@ -40,6 +43,18 @@ def parse_args() -> argparse.Namespace:
         "--use-existing-prices",
         action="store_true",
         help="Use artifact-dir/prices.csv when present instead of refetching Yahoo prices.",
+    )
+    parser.add_argument("--include-fred", action="store_true", help="Fetch and join FRED macro data.")
+    parser.add_argument("--include-sec", action="store_true", help="Fetch and join SEC company facts.")
+    parser.add_argument(
+        "--use-existing-fred",
+        action="store_true",
+        help="Use artifact-dir/fred_macro.csv when present instead of refetching FRED.",
+    )
+    parser.add_argument(
+        "--use-existing-sec",
+        action="store_true",
+        help="Use SEC artifact CSVs when present instead of refetching SEC company facts.",
     )
     return parser.parse_args()
 
@@ -84,6 +99,61 @@ def write_csv(frame: pd.DataFrame, artifact_dir: Path, name: str) -> Path:
     return path
 
 
+def configured_fred_series(path: str | Path) -> list[str]:
+    config = load_yaml(path)
+    return [str(series) for series in config.get("fred", {}).get("series", [])]
+
+
+def configured_sec_concepts(path: str | Path) -> list[str]:
+    config = load_yaml(path)
+    concepts = [str(concept) for concept in config.get("sec", {}).get("concepts", [])]
+    return list(dict.fromkeys(concepts))
+
+
+def infer_numeric_source_features(
+    frame: pd.DataFrame,
+    *,
+    prefixes: tuple[str, ...],
+    exclude: set[str] | None = None,
+) -> list[str]:
+    """Infer numeric feature columns from joined source data."""
+    excluded = exclude or set()
+    features: list[str] = []
+    for column in frame.columns:
+        if column in excluded or not column.startswith(prefixes):
+            continue
+        if pd.api.types.is_numeric_dtype(frame[column]) and frame[column].notna().any():
+            features.append(column)
+    return features
+
+
+def choose_complete_feature_set(
+    frame: pd.DataFrame,
+    *,
+    candidate_features: list[str],
+    horizons: tuple[int, ...],
+    min_rows: int,
+) -> list[str]:
+    """Keep features that still leave enough complete training rows."""
+    target_columns = []
+    for horizon in horizons:
+        target_columns.extend(
+            [
+                f"forward_return_{horizon}d",
+                f"direction_{horizon}d",
+                f"signal_target_{horizon}d",
+            ]
+        )
+
+    selected: list[str] = []
+    for feature in candidate_features:
+        trial = [*selected, feature]
+        rows = frame.dropna(subset=[*trial, *target_columns])
+        if len(rows) >= min_rows:
+            selected.append(feature)
+    return selected
+
+
 def main() -> None:
     args = parse_args()
     artifact_dir = Path(args.artifact_dir)
@@ -92,6 +162,7 @@ def main() -> None:
     members = load_universe(args.universe, args.tickers)
     tickers = [str(member["ticker"]).upper() for member in members]
     horizons = load_horizons(args.horizons)
+    ciks = [str(member["cik"]) for member in members if member.get("cik")]
 
     prices_path = artifact_dir / "prices.csv"
     if args.use_existing_prices and prices_path.exists():
@@ -102,14 +173,41 @@ def main() -> None:
         prices = price_result.frame.dropna(subset=["adj_close"]).copy()
         write_csv(prices, artifact_dir, "prices.csv")
 
+    macro = None
+    if args.include_fred:
+        macro_path = artifact_dir / "fred_macro.csv"
+        if args.use_existing_fred and macro_path.exists():
+            macro = pd.read_csv(macro_path, parse_dates=["observation_date", "available_date"])
+        else:
+            series = configured_fred_series(args.data_sources)
+            fred = FredAdapter()
+            macro_result = fred.fetch(series, args.start_date, args.end_date)
+            macro = macro_result.frame.dropna(subset=["value"]).copy()
+            write_csv(macro, artifact_dir, "fred_macro.csv")
+
+    fundamentals = None
+    if args.include_sec:
+        facts_long_path = artifact_dir / "sec_company_facts_long.csv"
+        facts_wide_path = artifact_dir / "sec_company_facts_wide.csv"
+        if args.use_existing_sec and facts_wide_path.exists():
+            fundamentals = pd.read_csv(facts_wide_path, parse_dates=["available_date"])
+        else:
+            concepts = configured_sec_concepts(args.data_sources)
+            sec = SECEdgarAdapter()
+            facts_result = sec.fetch(ciks, concepts)
+            facts_long = facts_result.frame.dropna(subset=["value"]).copy()
+            fundamentals = company_facts_to_wide(facts_long)
+            write_csv(facts_long, artifact_dir, "sec_company_facts_long.csv")
+            write_csv(fundamentals, artifact_dir, "sec_company_facts_wide.csv")
+
     builder = PointInTimeDatasetBuilder(
         PITBuildConfig(
             start_date=args.start_date,
             end_date=args.end_date,
-            feature_regime="core_long_history",
+            feature_regime="expanded" if args.include_fred or args.include_sec else "core_long_history",
         )
     )
-    pit = builder.build(members, prices=prices)
+    pit = builder.build(members, prices=prices, macro=macro, fundamentals=fundamentals)
     panel = pit.panel.dropna(subset=["adj_close"]).copy()
     missingness_summaries = [summarize_missingness_flags(panel, table_name="pit_price_panel")]
     write_csv(drop_missingness_flag_columns(panel), artifact_dir, "pit_price_panel.csv")
@@ -146,7 +244,18 @@ def main() -> None:
     signal_frames: list[pd.DataFrame] = []
     backtests: list[pd.DataFrame] = []
 
-    feature_columns = feature_result.feature_columns
+    source_feature_columns = infer_numeric_source_features(
+        target_frame,
+        prefixes=("macro_", "fund_"),
+        exclude={"macro_available_date", "fundamentals_available_date"},
+    )
+    feature_columns = choose_complete_feature_set(
+        target_frame,
+        candidate_features=[*feature_result.feature_columns, *source_feature_columns],
+        horizons=horizons,
+        min_rows=max(args.min_train_days + args.test_size_days, 1000),
+    )
+    write_csv(pd.DataFrame({"feature": feature_columns}), artifact_dir, "selected_features.csv")
     model_frame = make_complete_modeling_frame(
         target_frame,
         feature_columns=feature_columns,

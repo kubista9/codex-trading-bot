@@ -27,8 +27,13 @@ sec:
   requests_per_second: 5
   concepts:
     - Revenues
+    - RevenueFromContractWithCustomerExcludingAssessedTax
+    - SalesRevenueNet
     - NetIncomeLoss
     - EarningsPerShareDiluted
     - Assets
     - Liabilities
+    - CashAndCashEquivalentsAtCarryingValue
     - NetCashProvidedByUsedInOperatingActivities
+    - NetCashProvidedByUsedInOperatingActivitiesContinuingOperations
+    - WeightedAverageNumberOfDilutedSharesOutstanding

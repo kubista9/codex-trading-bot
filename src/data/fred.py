@@ -8,6 +8,7 @@ import pandas as pd
 import requests
 
 from src.data.base import DataSourceError, IngestionResult, SourceMetadata, utc_now
+from src.utils.env import load_dotenv
 from src.utils.logging import get_logger
 
 LOGGER = get_logger(__name__)
@@ -28,6 +29,7 @@ class FredAdapter:
         rate_limit_seconds: float = 0.2,
         session: requests.Session | None = None,
     ) -> None:
+        load_dotenv()
         self.api_key = api_key or os.getenv(api_key_env)
         self.timeout_seconds = timeout_seconds
         self.rate_limit_seconds = rate_limit_seconds

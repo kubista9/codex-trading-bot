@@ -10,6 +10,7 @@ import requests
 
 from src.data.base import DataSourceError, IngestionResult, SourceMetadata, utc_now
 from src.data.identifiers import normalize_cik, normalize_ticker
+from src.utils.env import load_dotenv
 
 
 def snake_case(value: str) -> str:
@@ -33,6 +34,7 @@ class SECEdgarAdapter:
         requests_per_second: float = 5,
         session: requests.Session | None = None,
     ) -> None:
+        load_dotenv()
         self.user_agent = user_agent or os.getenv(user_agent_env)
         if not self.user_agent:
             msg = "SEC_USER_AGENT must be set for SEC EDGAR requests"

@@ -38,12 +38,24 @@ python scripts/run_baseline_experiment.py \
 
 Outputs are written to `artifacts/baseline_experiment/`.
 
+To include FRED macro data and SEC company facts:
+
+```bash
+python scripts/run_baseline_experiment.py \
+  --start-date 2010-01-01 \
+  --end-date 2026-06-12 \
+  --include-fred \
+  --include-sec
+```
+
 Important exported tables:
 
 - `feature_target_panel.csv`: full audit panel, including natural edge missingness from rolling lookbacks and future targets.
 - `model_dataset.csv`: strict training-ready dataset with complete selected features and targets only.
 - `missingness_summary.csv`: compact counts for generated missingness flags.
 - `feature_importance.csv`: model coefficients or tree feature importances by task, horizon, and model.
+- `fred_macro.csv`: FRED observations when `--include-fred` is used.
+- `sec_company_facts_long.csv` and `sec_company_facts_wide.csv`: SEC XBRL company facts when `--include-sec` is used.
 
 ## Current Branch
 
