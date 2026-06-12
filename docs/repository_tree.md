@@ -37,19 +37,26 @@
 │   │   ├── sec.py
 │   │   ├── storage.py
 │   │   └── yahoo.py
+│   ├── features/
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── selection.py
+│   │   └── technical.py
+│   ├── targets/
+│   │   ├── __init__.py
+│   │   └── returns.py
 │   └── utils/
 │       ├── __init__.py
 │       ├── config.py
 │       └── logging.py
 └── tests/
+    ├── test_features_targets.py
     └── test_pit_builder.py
 ```
 
 Later milestones add:
 
 ```text
-src/features/
-src/targets/
 src/models/
 src/evaluation/
 src/signals/
