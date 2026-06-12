@@ -187,6 +187,82 @@ def choose_complete_feature_set(
     return selected
 
 
+def train_and_export(
+    *,
+    frame: pd.DataFrame,
+    feature_columns: list[str],
+    horizons: tuple[int, ...],
+    artifact_dir: Path,
+    prefix: str,
+    test_size_days: int,
+    min_train_days: int,
+    transaction_cost_bps: float,
+) -> dict[str, pd.DataFrame]:
+    """Train all baseline models for one dataset regime and write artifacts."""
+    metrics: list[dict[str, Any]] = []
+    predictions: list[pd.DataFrame] = []
+    importances: list[pd.DataFrame] = []
+    signal_frames: list[pd.DataFrame] = []
+    backtests: list[pd.DataFrame] = []
+
+    for horizon in horizons:
+        regression_results = train_regression_models(
+            frame,
+            feature_columns=feature_columns,
+            target_col=f"forward_return_{horizon}d",
+            horizon=horizon,
+            test_size_days=test_size_days,
+            min_train_days=min_train_days,
+        )
+        classification_results = train_classification_models(
+            frame,
+            feature_columns=feature_columns,
+            target_col=f"direction_{horizon}d",
+            horizon=horizon,
+            test_size_days=test_size_days,
+            min_train_days=min_train_days,
+        )
+
+        for result in [*regression_results, *classification_results]:
+            metrics.append(result.metrics)
+            predictions.append(result.predictions)
+            if not result.feature_importance.empty:
+                importances.append(result.feature_importance)
+
+        for result in regression_results:
+            signals = signals_from_expected_returns(
+                result.predictions,
+                buy_threshold=0.02,
+                sell_threshold=-0.02,
+            )
+            signal_frames.append(signals)
+            backtests.append(
+                run_signal_backtest(
+                    signals,
+                    transaction_cost_bps=transaction_cost_bps,
+                )
+            )
+
+    metrics_frame = pd.DataFrame.from_records(metrics)
+    predictions_frame = pd.concat(predictions, ignore_index=True) if predictions else pd.DataFrame()
+    importances_frame = pd.concat(importances, ignore_index=True) if importances else pd.DataFrame()
+    signals_frame = pd.concat(signal_frames, ignore_index=True) if signal_frames else pd.DataFrame()
+    backtest_frame = pd.concat(backtests, ignore_index=True) if backtests else pd.DataFrame()
+
+    write_csv(metrics_frame, artifact_dir, f"metrics_{prefix}.csv")
+    write_csv(predictions_frame, artifact_dir, f"predictions_{prefix}.csv")
+    write_csv(importances_frame, artifact_dir, f"feature_importance_{prefix}.csv")
+    write_csv(signals_frame, artifact_dir, f"signals_{prefix}.csv")
+    write_csv(backtest_frame, artifact_dir, f"backtest_{prefix}.csv")
+    return {
+        "metrics": metrics_frame,
+        "predictions": predictions_frame,
+        "feature_importance": importances_frame,
+        "signals": signals_frame,
+        "backtest": backtest_frame,
+    }
+
+
 def main() -> None:
     args = parse_args()
     artifact_dir = Path(args.artifact_dir)
@@ -272,79 +348,118 @@ def main() -> None:
         summarize_missingness_flags(target_frame, table_name="feature_target_panel")
     )
     write_csv(drop_missingness_flag_columns(target_frame), artifact_dir, "feature_target_panel.csv")
+    write_csv(drop_missingness_flag_columns(target_frame), artifact_dir, "research_dataset_2010.csv")
     missingness_summary = pd.concat(missingness_summaries, ignore_index=True)
     write_csv(missingness_summary, artifact_dir, "missingness_summary.csv")
     write_csv(feature_result.metadata, artifact_dir, "feature_metadata.csv")
-
-    metrics: list[dict[str, Any]] = []
-    predictions: list[pd.DataFrame] = []
-    importances: list[pd.DataFrame] = []
-    signal_frames: list[pd.DataFrame] = []
-    backtests: list[pd.DataFrame] = []
 
     source_feature_columns = infer_numeric_source_features(
         target_frame,
         prefixes=("macro_", "fund_"),
         exclude={"macro_available_date", "fundamentals_available_date"},
     )
-    feature_columns = choose_complete_feature_set(
+    macro_feature_columns = [
+        column for column in source_feature_columns if column.startswith("macro_")
+    ]
+    fundamental_feature_columns = [
+        column for column in source_feature_columns if column.startswith("fund_")
+    ]
+
+    core_feature_columns = choose_complete_feature_set(
         target_frame,
-        candidate_features=[*feature_result.feature_columns, *source_feature_columns],
+        candidate_features=[*feature_result.feature_columns, *macro_feature_columns],
         horizons=horizons,
         min_rows=max(args.min_train_days + args.test_size_days, 1000),
     )
-    write_csv(pd.DataFrame({"feature": feature_columns}), artifact_dir, "selected_features.csv")
-    model_frame = make_complete_modeling_frame(
+    expanded_feature_columns = choose_complete_feature_set(
         target_frame,
-        feature_columns=feature_columns,
+        candidate_features=[*core_feature_columns, *fundamental_feature_columns],
+        horizons=horizons,
+        min_rows=max(args.min_train_days + args.test_size_days, 1000),
+    )
+    write_csv(
+        pd.DataFrame({"feature": core_feature_columns}),
+        artifact_dir,
+        "selected_features_core_2010.csv",
+    )
+    write_csv(
+        pd.DataFrame({"feature": expanded_feature_columns}),
+        artifact_dir,
+        "selected_features_expanded_financials.csv",
+    )
+
+    core_model_frame = make_complete_modeling_frame(
+        target_frame,
+        feature_columns=core_feature_columns,
         horizons=horizons,
         context_columns=["as_of_date", "ticker", "adj_close", "volume"],
     )
-    write_csv(model_frame, artifact_dir, "model_dataset.csv")
+    expanded_model_frame = make_complete_modeling_frame(
+        target_frame,
+        feature_columns=expanded_feature_columns,
+        horizons=horizons,
+        context_columns=["as_of_date", "ticker", "adj_close", "volume"],
+    )
+    write_csv(core_model_frame, artifact_dir, "model_dataset_core_2010.csv")
+    write_csv(expanded_model_frame, artifact_dir, "model_dataset_expanded_financials.csv")
+    write_csv(core_model_frame, artifact_dir, "model_dataset.csv")
 
-    for horizon in horizons:
-        regression_results = train_regression_models(
-            model_frame,
-            feature_columns=feature_columns,
-            target_col=f"forward_return_{horizon}d",
-            horizon=horizon,
-            test_size_days=args.test_size_days,
-            min_train_days=args.min_train_days,
-        )
-        classification_results = train_classification_models(
-            model_frame,
-            feature_columns=feature_columns,
-            target_col=f"direction_{horizon}d",
-            horizon=horizon,
-            test_size_days=args.test_size_days,
-            min_train_days=args.min_train_days,
-        )
+    core_results = train_and_export(
+        frame=core_model_frame,
+        feature_columns=core_feature_columns,
+        horizons=horizons,
+        artifact_dir=artifact_dir,
+        prefix="core_2010",
+        test_size_days=args.test_size_days,
+        min_train_days=args.min_train_days,
+        transaction_cost_bps=args.transaction_cost_bps,
+    )
+    expanded_results = train_and_export(
+        frame=expanded_model_frame,
+        feature_columns=expanded_feature_columns,
+        horizons=horizons,
+        artifact_dir=artifact_dir,
+        prefix="expanded_financials",
+        test_size_days=args.test_size_days,
+        min_train_days=args.min_train_days,
+        transaction_cost_bps=args.transaction_cost_bps,
+    )
 
-        for result in [*regression_results, *classification_results]:
-            metrics.append(result.metrics)
-            predictions.append(result.predictions)
-            if not result.feature_importance.empty:
-                importances.append(result.feature_importance)
-
-        for result in regression_results:
-            signals = signals_from_expected_returns(
-                result.predictions,
-                buy_threshold=0.02,
-                sell_threshold=-0.02,
-            )
-            signal_frames.append(signals)
-            backtests.append(
-                run_signal_backtest(
-                    signals,
-                    transaction_cost_bps=args.transaction_cost_bps,
-                )
-            )
-
-    metrics_frame = pd.DataFrame.from_records(metrics)
-    predictions_frame = pd.concat(predictions, ignore_index=True) if predictions else pd.DataFrame()
-    importances_frame = pd.concat(importances, ignore_index=True) if importances else pd.DataFrame()
-    signals_frame = pd.concat(signal_frames, ignore_index=True) if signal_frames else pd.DataFrame()
-    backtest_frame = pd.concat(backtests, ignore_index=True) if backtests else pd.DataFrame()
+    metrics_frame = pd.concat(
+        [
+            core_results["metrics"].assign(dataset_regime="core_2010"),
+            expanded_results["metrics"].assign(dataset_regime="expanded_financials"),
+        ],
+        ignore_index=True,
+    )
+    backtest_frame = pd.concat(
+        [
+            core_results["backtest"].assign(dataset_regime="core_2010"),
+            expanded_results["backtest"].assign(dataset_regime="expanded_financials"),
+        ],
+        ignore_index=True,
+    )
+    predictions_frame = pd.concat(
+        [
+            core_results["predictions"].assign(dataset_regime="core_2010"),
+            expanded_results["predictions"].assign(dataset_regime="expanded_financials"),
+        ],
+        ignore_index=True,
+    )
+    importances_frame = pd.concat(
+        [
+            core_results["feature_importance"].assign(dataset_regime="core_2010"),
+            expanded_results["feature_importance"].assign(dataset_regime="expanded_financials"),
+        ],
+        ignore_index=True,
+    )
+    signals_frame = pd.concat(
+        [
+            core_results["signals"].assign(dataset_regime="core_2010"),
+            expanded_results["signals"].assign(dataset_regime="expanded_financials"),
+        ],
+        ignore_index=True,
+    )
 
     write_csv(metrics_frame, artifact_dir, "metrics.csv")
     write_csv(predictions_frame, artifact_dir, "predictions.csv")

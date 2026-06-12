@@ -50,10 +50,14 @@ python scripts/run_baseline_experiment.py \
 
 Important exported tables:
 
+- `research_dataset_2010.csv`: full 2010-start research panel with price, macro, and SEC financial columns where point-in-time available.
 - `feature_target_panel.csv`: full audit panel, including natural edge missingness from rolling lookbacks and future targets.
-- `model_dataset.csv`: strict training-ready dataset with complete selected features and targets only.
+- `model_dataset_core_2010.csv`: strict no-null long-history training dataset using technical and FRED macro features.
+- `model_dataset_expanded_financials.csv`: strict no-null expanded training dataset using technical, FRED macro, and SEC financial features.
+- `model_dataset.csv`: compatibility alias for `model_dataset_core_2010.csv`, so the default modeling file starts in 2010.
 - `missingness_summary.csv`: compact counts for generated missingness flags.
 - `feature_importance.csv`: model coefficients or tree feature importances by task, horizon, and model.
+- `feature_importance_core_2010.csv` and `feature_importance_expanded_financials.csv`: regime-specific importance exports.
 - `fred_macro.csv`: FRED observations when `--include-fred` is used.
 - `sec_company_facts_long.csv` and `sec_company_facts_wide.csv`: SEC XBRL company facts when `--include-sec` is used.
 
