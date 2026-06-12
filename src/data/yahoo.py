@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from io import StringIO
+import json
 from pathlib import Path
 from time import sleep
 from typing import Iterable
@@ -82,7 +82,7 @@ class YahooFinanceAdapter:
     ) -> tuple[pd.DataFrame, Path]:
         start_ts = int(pd.Timestamp(start_date, tz="UTC").timestamp())
         end_ts = int((pd.Timestamp(end_date, tz="UTC") + pd.Timedelta(days=1)).timestamp())
-        url = f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}"
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
         params = {
             "period1": start_ts,
             "period2": end_ts,
@@ -96,33 +96,15 @@ class YahooFinanceAdapter:
             raise DataSourceError(msg)
 
         raw_dir = self.store.source_raw_dir(self.source_name)
-        raw_path = raw_dir / f"{ticker}_{start_date}_{end_date}.csv"
+        raw_path = raw_dir / f"{ticker}_{start_date}_{end_date}.json"
         raw_path.write_text(response.text, encoding="utf-8")
 
-        frame = pd.read_csv(StringIO(response.text))
+        payload = response.json()
+        frame = parse_chart_payload(payload, ticker)
         if frame.empty:
             msg = f"Yahoo returned no rows for {ticker}"
             raise DataSourceError(msg)
 
-        frame = frame.rename(
-            columns={
-                "Date": "as_of_date",
-                "Open": "open",
-                "High": "high",
-                "Low": "low",
-                "Close": "close",
-                "Adj Close": "adj_close",
-                "Volume": "volume",
-            }
-        )
-        expected = {"as_of_date", "open", "high", "low", "close", "adj_close", "volume"}
-        missing = expected.difference(frame.columns)
-        if missing:
-            msg = f"Yahoo response missing columns for {ticker}: {sorted(missing)}"
-            raise DataSourceError(msg)
-
-        frame["ticker"] = ticker
-        frame["as_of_date"] = pd.to_datetime(frame["as_of_date"]).dt.normalize()
         frame["source_refresh_time"] = utc_now()
         return frame[
             [
@@ -137,3 +119,37 @@ class YahooFinanceAdapter:
                 "source_refresh_time",
             ]
         ], raw_path
+
+
+def parse_chart_payload(payload: dict[str, object], ticker: str) -> pd.DataFrame:
+    """Parse Yahoo chart JSON into normalized OHLCV rows."""
+    chart = payload.get("chart", {})
+    if not isinstance(chart, dict):
+        msg = "Yahoo chart payload missing chart object"
+        raise DataSourceError(msg)
+    error = chart.get("error")
+    if error:
+        msg = f"Yahoo chart error for {ticker}: {json.dumps(error)}"
+        raise DataSourceError(msg)
+    results = chart.get("result")
+    if not isinstance(results, list) or not results:
+        return pd.DataFrame()
+
+    result = results[0]
+    timestamps = result.get("timestamp") or []
+    indicators = result.get("indicators", {})
+    quote = (indicators.get("quote") or [{}])[0]
+    adjclose = (indicators.get("adjclose") or [{}])[0].get("adjclose")
+    frame = pd.DataFrame(
+        {
+            "as_of_date": pd.to_datetime(timestamps, unit="s", utc=True).tz_localize(None).normalize(),
+            "ticker": normalize_ticker(ticker),
+            "open": quote.get("open"),
+            "high": quote.get("high"),
+            "low": quote.get("low"),
+            "close": quote.get("close"),
+            "adj_close": adjclose if adjclose is not None else quote.get("close"),
+            "volume": quote.get("volume"),
+        }
+    )
+    return frame.dropna(subset=["as_of_date"]).sort_values("as_of_date").reset_index(drop=True)

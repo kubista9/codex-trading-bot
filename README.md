@@ -26,6 +26,18 @@ Set `SEC_USER_AGENT` before using SEC endpoints. Set `FRED_API_KEY` before using
 pytest
 ```
 
+## Run Baseline Experiment
+
+After installing dependencies, run a price-only baseline over the seed universe:
+
+```bash
+python scripts/run_baseline_experiment.py \
+  --start-date 2010-01-01 \
+  --end-date 2026-06-12
+```
+
+Outputs are written to `artifacts/baseline_experiment/`.
+
 ## Current Branch
 
 Initial scaffold work is intended to happen on:

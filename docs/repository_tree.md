@@ -27,6 +27,9 @@
 │   └── README.md
 ├── src/
 │   ├── __init__.py
+│   ├── backtest/
+│   │   ├── __init__.py
+│   │   └── simple.py
 │   ├── data/
 │   │   ├── __init__.py
 │   │   ├── base.py
@@ -42,6 +45,17 @@
 │   │   ├── base.py
 │   │   ├── selection.py
 │   │   └── technical.py
+│   ├── evaluation/
+│   │   ├── __init__.py
+│   │   └── metrics.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── registry.py
+│   │   ├── splits.py
+│   │   └── training.py
+│   ├── signals/
+│   │   ├── __init__.py
+│   │   └── rules.py
 │   ├── targets/
 │   │   ├── __init__.py
 │   │   └── returns.py
@@ -51,16 +65,13 @@
 │       └── logging.py
 └── tests/
     ├── test_features_targets.py
+    ├── test_models_backtest.py
     └── test_pit_builder.py
 ```
 
 Later milestones add:
 
 ```text
-src/models/
-src/evaluation/
-src/signals/
-src/backtest/
 src/monitoring/
 src/agent_review/
 dashboard/src/
