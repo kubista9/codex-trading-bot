@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.data.pit import PITBuildConfig, PointInTimeDatasetBuilder
+from src.data.pit import PITBuildConfig, PointInTimeDatasetBuilder, normalize_macro_frame
+from src.data.sec import company_facts_to_wide
 
 
 def test_universe_rows_start_at_listing_date() -> None:
@@ -82,3 +83,37 @@ def test_fundamentals_do_not_leak_across_tickers() -> None:
     bbb = panel[panel["ticker"] == "BBB"]
     assert bbb["fund_assets"].isna().all()
     assert bbb["fund_assets__is_structurally_missing"].all()
+
+
+def test_macro_wide_frame_forward_fills_each_series() -> None:
+    macro = pd.DataFrame(
+        {
+            "series_id": ["DGS10", "DGS2", "DGS10"],
+            "available_date": ["2024-01-02", "2024-01-03", "2024-01-04"],
+            "value": [4.0, 3.5, 4.1],
+        }
+    )
+
+    wide = normalize_macro_frame(macro)
+
+    row = wide[wide["available_date"] == pd.Timestamp("2024-01-04")].iloc[0]
+    assert row["macro_dgs10"] == 4.1
+    assert row["macro_dgs2"] == 3.5
+
+
+def test_company_facts_wide_forward_fills_each_concept() -> None:
+    facts = pd.DataFrame(
+        {
+            "ticker": ["AAA", "AAA"],
+            "cik": ["0000000001", "0000000001"],
+            "available_date": ["2024-01-02", "2024-01-05"],
+            "feature": ["fund_assets", "fund_net_income_loss"],
+            "value": [100.0, 10.0],
+        }
+    )
+
+    wide = company_facts_to_wide(facts)
+
+    row = wide[wide["available_date"] == pd.Timestamp("2024-01-05")].iloc[0]
+    assert row["fund_assets"] == 100.0
+    assert row["fund_net_income_loss"] == 10.0

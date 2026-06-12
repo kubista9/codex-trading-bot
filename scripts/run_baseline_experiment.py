@@ -14,7 +14,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.backtest.simple import run_signal_backtest
-from src.data.missingness import drop_missingness_flag_columns, summarize_missingness_flags
+from src.data.missingness import (
+    drop_missingness_flag_columns,
+    is_missingness_flag,
+    summarize_missingness_flags,
+)
 from src.data.pit import PITBuildConfig, PointInTimeDatasetBuilder
 from src.data.fred import FredAdapter
 from src.data.sec import SECEdgarAdapter, company_facts_to_wide
@@ -104,10 +108,37 @@ def configured_fred_series(path: str | Path) -> list[str]:
     return [str(series) for series in config.get("fred", {}).get("series", [])]
 
 
+def configured_fred_lags(path: str | Path) -> dict[str, int]:
+    config = load_yaml(path)
+    lags = config.get("fred", {}).get("availability_lag_days", {})
+    return {str(series): int(days) for series, days in lags.items()}
+
+
 def configured_sec_concepts(path: str | Path) -> list[str]:
     config = load_yaml(path)
     concepts = [str(concept) for concept in config.get("sec", {}).get("concepts", [])]
     return list(dict.fromkeys(concepts))
+
+
+def cik_to_ticker_map(members: list[dict[str, Any]]) -> dict[str, str]:
+    """Build a normalized CIK-to-ticker map from configured universe members."""
+    mapping: dict[str, str] = {}
+    for member in members:
+        cik = str(member.get("cik", "")).lstrip("0")
+        ticker = str(member.get("ticker", "")).upper()
+        if cik and ticker:
+            mapping[f"{int(cik):010d}"] = ticker
+    return mapping
+
+
+def apply_fred_availability_lags(macro: pd.DataFrame, lags: dict[str, int]) -> pd.DataFrame:
+    """Apply conservative availability lags to FRED observations."""
+    frame = macro.copy()
+    frame["observation_date"] = pd.to_datetime(frame["observation_date"]).dt.normalize()
+    frame["series_id"] = frame["series_id"].astype(str)
+    lag_days = frame["series_id"].map(lags).fillna(31).astype(int)
+    frame["available_date"] = frame["observation_date"] + pd.to_timedelta(lag_days, unit="D")
+    return frame
 
 
 def infer_numeric_source_features(
@@ -121,6 +152,8 @@ def infer_numeric_source_features(
     features: list[str] = []
     for column in frame.columns:
         if column in excluded or not column.startswith(prefixes):
+            continue
+        if is_missingness_flag(column):
             continue
         if pd.api.types.is_numeric_dtype(frame[column]) and frame[column].notna().any():
             features.append(column)
@@ -163,6 +196,7 @@ def main() -> None:
     tickers = [str(member["ticker"]).upper() for member in members]
     horizons = load_horizons(args.horizons)
     ciks = [str(member["cik"]) for member in members if member.get("cik")]
+    ticker_by_cik = cik_to_ticker_map(members)
 
     prices_path = artifact_dir / "prices.csv"
     if args.use_existing_prices and prices_path.exists():
@@ -176,6 +210,7 @@ def main() -> None:
     macro = None
     if args.include_fred:
         macro_path = artifact_dir / "fred_macro.csv"
+        fred_lags = configured_fred_lags(args.data_sources)
         if args.use_existing_fred and macro_path.exists():
             macro = pd.read_csv(macro_path, parse_dates=["observation_date", "available_date"])
         else:
@@ -183,7 +218,8 @@ def main() -> None:
             fred = FredAdapter()
             macro_result = fred.fetch(series, args.start_date, args.end_date)
             macro = macro_result.frame.dropna(subset=["value"]).copy()
-            write_csv(macro, artifact_dir, "fred_macro.csv")
+        macro = apply_fred_availability_lags(macro, fred_lags)
+        write_csv(macro, artifact_dir, "fred_macro.csv")
 
     fundamentals = None
     if args.include_sec:
@@ -196,6 +232,8 @@ def main() -> None:
             sec = SECEdgarAdapter()
             facts_result = sec.fetch(ciks, concepts)
             facts_long = facts_result.frame.dropna(subset=["value"]).copy()
+            facts_long["cik"] = facts_long["cik"].astype(str).str.zfill(10)
+            facts_long["ticker"] = facts_long["ticker"].fillna(facts_long["cik"].map(ticker_by_cik))
             fundamentals = company_facts_to_wide(facts_long)
             write_csv(facts_long, artifact_dir, "sec_company_facts_long.csv")
             write_csv(fundamentals, artifact_dir, "sec_company_facts_wide.csv")

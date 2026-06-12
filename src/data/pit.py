@@ -295,6 +295,9 @@ def normalize_macro_frame(macro: pd.DataFrame) -> pd.DataFrame:
             aggfunc="last",
         ).reset_index()
         wide.columns.name = None
-        return wide.sort_values("available_date").reset_index(drop=True)
+        wide = wide.sort_values("available_date").reset_index(drop=True)
+        feature_cols = [column for column in wide.columns if column != "available_date"]
+        wide[feature_cols] = wide[feature_cols].ffill()
+        return wide
 
     return frame.sort_values("available_date").reset_index(drop=True)

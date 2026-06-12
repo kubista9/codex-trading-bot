@@ -19,6 +19,12 @@ fred:
     - FEDFUNDS
     - CPIAUCSL
     - UNRATE
+  availability_lag_days:
+    DGS10: 1
+    DGS2: 1
+    FEDFUNDS: 31
+    CPIAUCSL: 31
+    UNRATE: 31
 
 sec:
   enabled: true
