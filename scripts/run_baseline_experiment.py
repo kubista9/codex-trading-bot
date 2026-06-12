@@ -14,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.backtest.simple import run_signal_backtest
+from src.data.missingness import drop_missingness_flag_columns, summarize_missingness_flags
 from src.data.pit import PITBuildConfig, PointInTimeDatasetBuilder
 from src.data.storage import LocalDataStore
 from src.data.yahoo import YahooFinanceAdapter
@@ -35,6 +36,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-train-days", type=int, default=756)
     parser.add_argument("--tickers", nargs="*", default=None)
     parser.add_argument("--transaction-cost-bps", type=float, default=5.0)
+    parser.add_argument(
+        "--use-existing-prices",
+        action="store_true",
+        help="Use artifact-dir/prices.csv when present instead of refetching Yahoo prices.",
+    )
     return parser.parse_args()
 
 
@@ -87,10 +93,14 @@ def main() -> None:
     tickers = [str(member["ticker"]).upper() for member in members]
     horizons = load_horizons(args.horizons)
 
-    yahoo = YahooFinanceAdapter(store=store)
-    price_result = yahoo.fetch(tickers, args.start_date, args.end_date)
-    prices = price_result.frame.dropna(subset=["adj_close"]).copy()
-    write_csv(prices, artifact_dir, "prices.csv")
+    prices_path = artifact_dir / "prices.csv"
+    if args.use_existing_prices and prices_path.exists():
+        prices = pd.read_csv(prices_path, parse_dates=["as_of_date"])
+    else:
+        yahoo = YahooFinanceAdapter(store=store)
+        price_result = yahoo.fetch(tickers, args.start_date, args.end_date)
+        prices = price_result.frame.dropna(subset=["adj_close"]).copy()
+        write_csv(prices, artifact_dir, "prices.csv")
 
     builder = PointInTimeDatasetBuilder(
         PITBuildConfig(
@@ -101,7 +111,8 @@ def main() -> None:
     )
     pit = builder.build(members, prices=prices)
     panel = pit.panel.dropna(subset=["adj_close"]).copy()
-    write_csv(panel, artifact_dir, "pit_price_panel.csv")
+    missingness_summaries = [summarize_missingness_flags(panel, table_name="pit_price_panel")]
+    write_csv(drop_missingness_flag_columns(panel), artifact_dir, "pit_price_panel.csv")
     write_csv(pit.coverage, artifact_dir, "dataset_coverage.csv")
 
     feature_result = build_technical_features(
@@ -121,7 +132,12 @@ def main() -> None:
             sell_threshold=-0.02,
         ),
     )
-    write_csv(target_frame, artifact_dir, "feature_target_panel.csv")
+    missingness_summaries.append(
+        summarize_missingness_flags(target_frame, table_name="feature_target_panel")
+    )
+    write_csv(drop_missingness_flag_columns(target_frame), artifact_dir, "feature_target_panel.csv")
+    missingness_summary = pd.concat(missingness_summaries, ignore_index=True)
+    write_csv(missingness_summary, artifact_dir, "missingness_summary.csv")
     write_csv(feature_result.metadata, artifact_dir, "feature_metadata.csv")
 
     metrics: list[dict[str, Any]] = []

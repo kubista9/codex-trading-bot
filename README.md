@@ -42,6 +42,7 @@ Important exported tables:
 
 - `feature_target_panel.csv`: full audit panel, including natural edge missingness from rolling lookbacks and future targets.
 - `model_dataset.csv`: strict training-ready dataset with complete selected features and targets only.
+- `missingness_summary.csv`: compact counts for generated missingness flags.
 - `feature_importance.csv`: model coefficients or tree feature importances by task, horizon, and model.
 
 ## Current Branch

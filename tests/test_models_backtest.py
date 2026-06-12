@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.backtest.simple import run_signal_backtest
+from src.data.missingness import drop_missingness_flag_columns, summarize_missingness_flags
 from src.models.dataset import make_complete_modeling_frame
 from src.models.splits import make_temporal_holdout
 from src.signals.rules import signals_from_expected_returns
@@ -79,3 +80,24 @@ def test_complete_modeling_frame_drops_incomplete_edges() -> None:
         pd.Timestamp("2024-01-03"),
     ]
     assert not complete.isna().any().any()
+
+
+def test_missingness_flags_export_as_summary_not_wide_noise() -> None:
+    frame = pd.DataFrame(
+        {
+            "as_of_date": pd.bdate_range("2024-01-01", periods=2),
+            "open": [1.0, 2.0],
+            "open__is_missing": [False, True],
+            "open__is_structurally_missing": [False, False],
+        }
+    )
+
+    clean = drop_missingness_flag_columns(frame)
+    summary = summarize_missingness_flags(frame, table_name="sample")
+
+    assert clean.columns.tolist() == ["as_of_date", "open"]
+    assert summary.loc[summary["flag_column"] == "open__is_missing", "true_count"].iloc[0] == 1
+    assert not bool(summary.loc[
+        summary["flag_column"] == "open__is_structurally_missing",
+        "any_true",
+    ].iloc[0])
