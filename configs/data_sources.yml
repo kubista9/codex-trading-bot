@@ -1,0 +1,45 @@
+data_root: data
+artifact_root: artifacts
+
+yahoo:
+  enabled: true
+  cache_raw: true
+  interval: 1d
+  adjusted: true
+  timeout_seconds: 30
+  rate_limit_seconds: 0.5
+
+fred:
+  enabled: true
+  api_key_env: FRED_API_KEY
+  timeout_seconds: 30
+  series:
+    - DGS10
+    - DGS2
+    - FEDFUNDS
+    - CPIAUCSL
+    - UNRATE
+  availability_lag_days:
+    DGS10: 1
+    DGS2: 1
+    FEDFUNDS: 31
+    CPIAUCSL: 31
+    UNRATE: 31
+
+sec:
+  enabled: true
+  user_agent_env: SEC_USER_AGENT
+  timeout_seconds: 30
+  requests_per_second: 5
+  concepts:
+    - Revenues
+    - RevenueFromContractWithCustomerExcludingAssessedTax
+    - SalesRevenueNet
+    - NetIncomeLoss
+    - EarningsPerShareDiluted
+    - Assets
+    - Liabilities
+    - CashAndCashEquivalentsAtCarryingValue
+    - NetCashProvidedByUsedInOperatingActivities
+    - NetCashProvidedByUsedInOperatingActivitiesContinuingOperations
+    - WeightedAverageNumberOfDilutedSharesOutstanding

@@ -1,0 +1,13 @@
+horizons:
+  trading_days: [1, 5, 20, 60]
+
+targets:
+  regression:
+    name_template: "forward_return_{h}d"
+  classification:
+    name_template: "direction_{h}d"
+    positive_threshold: 0.0
+  signal:
+    name_template: "signal_{h}d"
+    buy_threshold: 0.02
+    sell_threshold: -0.02

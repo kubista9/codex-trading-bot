@@ -1,0 +1,21 @@
+defaults:
+  start_date: "2010-01-01"
+  feature_regime: core_long_history
+  test_size_days: 252
+  validation:
+    method: expanding_window
+    min_train_days: 756
+    fold_stride_days: 63
+    shuffle: false
+
+models:
+  regression:
+    - linear_regression
+    - random_forest_regressor
+    - gradient_boosting_regressor
+    - xgboost_regressor
+  classification:
+    - logistic_regression
+    - random_forest_classifier
+    - gradient_boosting_classifier
+    - xgboost_classifier

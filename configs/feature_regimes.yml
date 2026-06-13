@@ -1,0 +1,61 @@
+feature_regimes:
+  core_long_history:
+    description: Price, volume, and selected long-running macro features.
+    groups:
+      - technical_price
+      - technical_volume
+      - macro_core
+
+  expanded:
+    description: Core features plus selected fundamentals.
+    groups:
+      - technical_price
+      - technical_volume
+      - macro_core
+      - fundamentals_selected
+
+  full:
+    description: Broader fundamentals and derived valuation/profitability metrics.
+    groups:
+      - technical_price
+      - technical_volume
+      - macro_core
+      - fundamentals_selected
+      - fundamentals_extended
+      - valuation_ratios
+
+groups:
+  technical_price:
+    columns:
+      - adj_close
+      - close
+      - open
+      - high
+      - low
+
+  technical_volume:
+    columns:
+      - volume
+
+  macro_core:
+    columns:
+      - macro_dgs10
+      - macro_dgs2
+      - macro_fedfunds
+      - macro_cpiaucsl
+      - macro_unrate
+
+  fundamentals_selected:
+    columns:
+      - fund_revenues
+      - fund_net_income_loss
+      - fund_earnings_per_share_diluted
+      - fund_assets
+      - fund_liabilities
+
+  fundamentals_extended:
+    columns:
+      - fund_net_cash_provided_by_used_in_operating_activities
+
+  valuation_ratios:
+    columns: []

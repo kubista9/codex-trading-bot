@@ -1,0 +1,31 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Local research data and generated artifacts.
+data/raw/*
+data/staged/*
+data/curated/*
+artifacts/*
+!data/raw/.gitkeep
+!data/staged/.gitkeep
+!data/curated/.gitkeep
+!artifacts/.gitkeep
+
+# Notebook outputs can be regenerated.
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Dashboard dependencies/build output.
+dashboard/node_modules/
+dashboard/dist/
+dashboard/build/

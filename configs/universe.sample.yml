@@ -1,0 +1,19 @@
+universe:
+  name: sp400_seed_research_subset
+  description: >
+    Small public-equity seed list for local smoke tests. Replace with a verified
+    point-in-time S&P 400 membership file before full research runs.
+  point_in_time_membership: false
+  members:
+    - ticker: CROX
+      cik: "0001334036"
+      listing_date: "2006-02-08"
+      membership_start: "2010-01-01"
+    - ticker: RGA
+      cik: "0000898174"
+      listing_date: "1993-05-04"
+      membership_start: "2010-01-01"
+    - ticker: THO
+      cik: "0000730263"
+      listing_date: "1984-01-01"
+      membership_start: "2010-01-01"
